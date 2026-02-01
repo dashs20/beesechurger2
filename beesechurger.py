@@ -2,9 +2,11 @@
 import sys
 import os
 import re
+import threading
+import queue
 from llama_cpp import Llama
 
-# --- CONFIGURATION ---
+# --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 SYSTEM_INSTRUCTION = (
     "You are Mr. Beesechurger. You are a paranoid, unhinged AI. "
@@ -13,19 +15,24 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-# --- Lightweight sentence-by-sentence TTS ---
-def tts_speak(text: str):
-    """Split text into sentences and speak each with espeak."""
-    sentences = re.split(r'(?<=[.!?]) +', text)
-    for s in sentences:
-        s_safe = s.replace('"', '\\"')  # escape quotes for shell
-        os.system(f'espeak "{s_safe}"')  # lightweight TTS
+# --- TTS Queue Worker ---
+tts_queue = queue.Queue()
 
-# --- Simple sentence splitter for streaming ---
+def tts_worker():
+    while True:
+        sentence = tts_queue.get()
+        if sentence is None:  # signal to exit
+            break
+        # escape quotes
+        s_safe = sentence.replace('"', '\\"')
+        os.system(f'espeak -s 150 -a 200 "{s_safe}"')
+        tts_queue.task_done()
+
+# --- Sentence splitter ---
 def split_sentences(text: str):
     return re.split(r'(?<=[.!?]) +', text)
 
-# --- Main loop ---
+# --- Main ---
 def main():
     if not os.path.exists(LLM_MODEL_PATH):
         print(f"MISSING BRAIN: {LLM_MODEL_PATH}")
@@ -34,12 +41,16 @@ def main():
     print("Loading Brain (RAM Optimized)...")
     llm = Llama(
         model_path=LLM_MODEL_PATH,
-        n_ctx=2048,          # smaller context for low-RAM boards
-        n_threads=4,         # match your 4-core CPU
+        n_ctx=2048,
+        n_threads=2,  # reduced for CPU headroom
         verbose=False
     )
 
-    print("\n--- TEXT + TTS MODE (per sentence) ---")
+    # Start TTS thread
+    tts_thread = threading.Thread(target=tts_worker, daemon=True)
+    tts_thread.start()
+
+    print("\n--- TEXT + TTS MODE (optimized) ---")
 
     while True:
         try:
@@ -58,7 +69,7 @@ def main():
 
             stream = llm(
                 prompt,
-                max_tokens=256,
+                max_tokens=128,      # smaller for speed
                 stop=["<end_of_turn>"],
                 echo=False,
                 stream=True,
@@ -73,22 +84,26 @@ def main():
                 print(token, end="", flush=True)
                 buffer += token
 
-                # Check for full sentences in buffer
+                # split sentences and enqueue
                 if re.search(r'[.!?] ', buffer):
                     sentences = split_sentences(buffer)
                     for s in sentences[:-1]:
-                        tts_speak(s)
-                    buffer = sentences[-1]  # keep incomplete sentence
+                        tts_queue.put(s)
+                    buffer = sentences[-1]
 
-            # Speak any leftover text
+            # enqueue leftover
             if buffer.strip():
-                tts_speak(buffer)
+                tts_queue.put(buffer)
 
-            print()  # newline after model response
+            print()  # newline
 
         except KeyboardInterrupt:
             print("\nExiting...")
             break
+
+    # signal TTS thread to exit
+    tts_queue.put(None)
+    tts_thread.join()
 
 if __name__ == "__main__":
     main()
