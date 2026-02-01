@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import sys
 import os
-import re
+import platform
 import threading
 import queue
+import time
+import itertools
+import pyttsx3
 from llama_cpp import Llama
 
 # --- CONFIG ---
@@ -15,24 +18,42 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-# --- TTS Queue Worker ---
+# --- TTS Queue ---
 tts_queue = queue.Queue()
 
-def tts_worker():
+def init_tts_engine():
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 150)
+    engine.setProperty("volume", 1.0)  # max volume
+    voices = engine.getProperty("voices")
+
+    system = platform.system()
+    if system == "Windows":
+        engine.setProperty("voice", voices[0].id)
+    else:
+        for v in voices:
+            if "en" in v.id.lower():
+                engine.setProperty("voice", v.id)
+                break
+    return engine
+
+def tts_worker(engine):
     while True:
-        sentence = tts_queue.get()
-        if sentence is None:  # signal to exit
+        text = tts_queue.get()
+        if text is None:
             break
-        # escape quotes
-        s_safe = sentence.replace('"', '\\"')
-        os.system(f'espeak -s 150 -a 200 "{s_safe}"')
+        engine.say(text)
+        engine.runAndWait()
         tts_queue.task_done()
 
-# --- Sentence splitter ---
-def split_sentences(text: str):
-    return re.split(r'(?<=[.!?]) +', text)
+def spinner_task(stop_event):
+    for c in itertools.cycle("|/-\\"):
+        if stop_event.is_set():
+            break
+        print(f"\rGenerating... {c}", end="", flush=True)
+        time.sleep(0.1)
+    print("\r" + " " * 20 + "\r", end="", flush=True)  # clear line
 
-# --- Main ---
 def main():
     if not os.path.exists(LLM_MODEL_PATH):
         print(f"MISSING BRAIN: {LLM_MODEL_PATH}")
@@ -42,15 +63,15 @@ def main():
     llm = Llama(
         model_path=LLM_MODEL_PATH,
         n_ctx=2048,
-        n_threads=2,  # reduced for CPU headroom
+        n_threads=2,
         verbose=False
     )
 
-    # Start TTS thread
-    tts_thread = threading.Thread(target=tts_worker, daemon=True)
+    tts_engine = init_tts_engine()
+    tts_thread = threading.Thread(target=tts_worker, args=(tts_engine,), daemon=True)
     tts_thread.start()
 
-    print("\n--- TEXT + TTS MODE (optimized) ---")
+    print("\n--- TEXT + TTS MODE (full-response) ---")
 
     while True:
         try:
@@ -65,43 +86,37 @@ def main():
                 f"<start_of_turn>model\n"
             )
 
-            print("Mr. Beesechurger:", end=" ", flush=True)
+            # Start spinner in a separate thread
+            stop_event = threading.Event()
+            spinner_thread = threading.Thread(target=spinner_task, args=(stop_event,), daemon=True)
+            spinner_thread.start()
 
-            stream = llm(
+            # Generate the full response
+            response = llm(
                 prompt,
-                max_tokens=128,      # smaller for speed
+                max_tokens=128,
                 stop=["<end_of_turn>"],
                 echo=False,
-                stream=True,
+                stream=False,
                 mirostat_mode=2,
                 mirostat_tau=5.0,
                 mirostat_eta=0.1
             )
 
-            buffer = ""
-            for output in stream:
-                token = output["choices"][0]["text"]
-                print(token, end="", flush=True)
-                buffer += token
+            # Stop spinner
+            stop_event.set()
+            spinner_thread.join()
 
-                # split sentences and enqueue
-                if re.search(r'[.!?] ', buffer):
-                    sentences = split_sentences(buffer)
-                    for s in sentences[:-1]:
-                        tts_queue.put(s)
-                    buffer = sentences[-1]
+            text = response["choices"][0]["text"].strip()
+            print("Mr. Beesechurger:", text)
 
-            # enqueue leftover
-            if buffer.strip():
-                tts_queue.put(buffer)
-
-            print()  # newline
+            # Enqueue the full response for TTS
+            tts_queue.put(text)
 
         except KeyboardInterrupt:
             print("\nExiting...")
             break
 
-    # signal TTS thread to exit
     tts_queue.put(None)
     tts_thread.join()
 
