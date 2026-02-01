@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
-import pyttsx3
+import subprocess
 from llama_cpp import Llama
 
 # --- CONFIG ---
@@ -13,36 +13,23 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-import pyttsx3
-import subprocess
-
-def init_tts_engine():
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 130)
-    engine.setProperty("volume", 1.0)
-
-    # Check installed espeak voices
+# --- NEW TTS FUNCTION (No pyttsx3) ---
+def speak(text):
+    """
+    Uses the system 'espeak' command directly.
+    Arguments:
+      -s 130 : Speed (words per minute)
+      -v bs+m1 : Voice (Bosnian Male 1 - nice and robotic)
+      -a 100 : Amplitude/Volume (0-200)
+    """
     try:
-        result = subprocess.run(["espeak", "--voices"], capture_output=True, text=True)
-        voices_list = [line.split()[1] for line in result.stdout.splitlines()[1:]]  # skip header
-        print("[DEBUG] Installed espeak voices:", voices_list)
-    except Exception:
-        voices_list = []
-
-    # Choose Bosnian if available
-    desired_voice = "bs+m1"
-    if desired_voice in voices_list:
-        engine.setProperty("voice", desired_voice)
-        print(f"[DEBUG] Using TTS voice: {desired_voice}")
-    else:
-        # fallback to first available
-        voices = engine.getProperty("voices")
-        engine.setProperty("voice", voices[0].id)
-        print(f"[WARN] Desired voice not found. Using default: {voices[0].id}")
-
-    return engine
-
-
+        # We redirect stderr to DEVNULL to hide alsa/audio errors from the console
+        subprocess.run(
+            ["espeak", "-s", "130", "-v", "bs+m1", "-a", "100", text], 
+            stderr=subprocess.DEVNULL
+        )
+    except FileNotFoundError:
+        print("\n[ERROR] 'espeak' is not installed. Run: sudo apt install espeak\n")
 
 # --- MAIN ---
 def main():
@@ -54,13 +41,11 @@ def main():
     llm = Llama(
         model_path=LLM_MODEL_PATH,
         n_ctx=2048,
-        n_threads=2,
+        n_threads=2, # Adjust based on your Rock-2a cores
         verbose=False
     )
 
-    tts_engine = init_tts_engine()
-
-    print("\n--- TEXT + TTS MODE (full-response) ---")
+    print("\n--- TEXT + TTS MODE (subprocess wrapper) ---")
 
     try:
         while True:
@@ -90,15 +75,13 @@ def main():
             text = response["choices"][0]["text"].strip()
             print("Mr. Beesechurger:", text)
 
-            # Speak it
-            tts_engine.say(text)
-            tts_engine.runAndWait()
+            # Speak the text
+            speak(text)
 
     except KeyboardInterrupt:
         print("\nExiting...")
 
     print("Goodbye!")
-
 
 if __name__ == "__main__":
     main()
