@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import os
-import platform
-import threading
-import queue
-import time
-import itertools
 import pyttsx3
 from llama_cpp import Llama
 
@@ -18,42 +13,26 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-# --- TTS Queue ---
-tts_queue = queue.Queue()
-
+# --- Initialize TTS ---
 def init_tts_engine():
     engine = pyttsx3.init()
-    engine.setProperty("rate", 150)
-    engine.setProperty("volume", 1.0)  # max volume
-    voices = engine.getProperty("voices")
+    engine.setProperty("rate", 130)  # slow, old-man style
+    engine.setProperty("volume", 1.0)
 
-    system = platform.system()
-    if system == "Windows":
+    # Bosnian voice
+    voice_id = "bs"
+    try:
+        engine.setProperty("voice", voice_id)
+        print(f"[DEBUG] Using TTS voice: {voice_id}")
+    except Exception:
+        print("[WARN] Voice not found, using default.")
+        voices = engine.getProperty("voices")
         engine.setProperty("voice", voices[0].id)
-    else:
-        for v in voices:
-            if "en" in v.id.lower():
-                engine.setProperty("voice", v.id)
-                break
+
     return engine
 
-def tts_worker(engine):
-    while True:
-        text = tts_queue.get()
-        if text is None:
-            break
-        engine.say(text)
-        engine.runAndWait()
-        tts_queue.task_done()
 
-def spinner_task(stop_event):
-    for c in itertools.cycle("|/-\\"):
-        if stop_event.is_set():
-            break
-        print(f"\rGenerating... {c}", end="", flush=True)
-        time.sleep(0.1)
-    print("\r" + " " * 20 + "\r", end="", flush=True)  # clear line
-
+# --- MAIN ---
 def main():
     if not os.path.exists(LLM_MODEL_PATH):
         print(f"MISSING BRAIN: {LLM_MODEL_PATH}")
@@ -68,13 +47,11 @@ def main():
     )
 
     tts_engine = init_tts_engine()
-    tts_thread = threading.Thread(target=tts_worker, args=(tts_engine,), daemon=True)
-    tts_thread.start()
 
     print("\n--- TEXT + TTS MODE (full-response) ---")
 
-    while True:
-        try:
+    try:
+        while True:
             user_input = input("\nYou: ")
             if user_input.lower() in ["exit", "quit"]:
                 break
@@ -86,12 +63,7 @@ def main():
                 f"<start_of_turn>model\n"
             )
 
-            # Start spinner in a separate thread
-            stop_event = threading.Event()
-            spinner_thread = threading.Thread(target=spinner_task, args=(stop_event,), daemon=True)
-            spinner_thread.start()
-
-            # Generate the full response
+            # Generate full response
             response = llm(
                 prompt,
                 max_tokens=128,
@@ -103,22 +75,18 @@ def main():
                 mirostat_eta=0.1
             )
 
-            # Stop spinner
-            stop_event.set()
-            spinner_thread.join()
-
             text = response["choices"][0]["text"].strip()
             print("Mr. Beesechurger:", text)
 
-            # Enqueue the full response for TTS
-            tts_queue.put(text)
+            # Speak it
+            tts_engine.say(text)
+            tts_engine.runAndWait()
 
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            break
+    except KeyboardInterrupt:
+        print("\nExiting...")
 
-    tts_queue.put(None)
-    tts_thread.join()
+    print("Goodbye!")
+
 
 if __name__ == "__main__":
     main()
