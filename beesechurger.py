@@ -13,23 +13,35 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-# --- Initialize TTS ---
+import pyttsx3
+import subprocess
+
 def init_tts_engine():
     engine = pyttsx3.init()
-    engine.setProperty("rate", 130)  # slow, old-man style
+    engine.setProperty("rate", 130)
     engine.setProperty("volume", 1.0)
 
-    # Bosnian voice
-    voice_id = "bs"
+    # Check installed espeak voices
     try:
-        engine.setProperty("voice", voice_id)
-        print(f"[DEBUG] Using TTS voice: {voice_id}")
+        result = subprocess.run(["espeak", "--voices"], capture_output=True, text=True)
+        voices_list = [line.split()[1] for line in result.stdout.splitlines()[1:]]  # skip header
+        print("[DEBUG] Installed espeak voices:", voices_list)
     except Exception:
-        print("[WARN] Voice not found, using default.")
+        voices_list = []
+
+    # Choose Bosnian if available
+    desired_voice = "bs+m1"
+    if desired_voice in voices_list:
+        engine.setProperty("voice", desired_voice)
+        print(f"[DEBUG] Using TTS voice: {desired_voice}")
+    else:
+        # fallback to first available
         voices = engine.getProperty("voices")
         engine.setProperty("voice", voices[0].id)
+        print(f"[WARN] Desired voice not found. Using default: {voices[0].id}")
 
     return engine
+
 
 
 # --- MAIN ---
