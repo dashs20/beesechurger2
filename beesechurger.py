@@ -21,13 +21,14 @@ def main():
     print("Loading Brain (CUDA Accelerated)...")
     
     llm = Llama(
-        model_path=LLM_MODEL_PATH,
-        n_ctx=2048,
-        n_threads=4,        
-        n_gpu_layers=-1,    
-        n_batch=512,        
-        verbose=False       
-    )
+            model_path=LLM_MODEL_PATH,
+            n_ctx=8192,         # <--- Maxed out memory for longer rants
+            n_threads=4,        
+            n_gpu_layers=-1,    
+            n_batch=1024,       # <--- Doubled for faster prompt processing on GTX 1080
+            flash_attn=True,    # <--- Mathematical optimization for GPU
+            verbose=False       
+        )
 
     print("\n--- BEESECHURGER ONLINE (STREAMING MODE) ---")
 
@@ -49,14 +50,15 @@ def main():
             # Generate response stream
             stream = llm(
                 prompt,
-                max_tokens=128,
+                max_tokens=256,     # <--- Allow him to go on longer tirades
                 stop=["<end_of_turn>"],
                 echo=False,
-                stream=True,  # <--- ENABLED STREAMING
+                stream=True,
+                temperature=1.0,    # <--- Higher randomness
                 mirostat_mode=2,
-                mirostat_tau=5.0,
+                mirostat_tau=8.0,   # <--- Pushed for more unhinged vocabulary
                 mirostat_eta=0.1
-            )
+                        )
 
             for chunk in stream:
                 text = chunk["choices"][0]["text"]
