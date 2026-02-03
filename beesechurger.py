@@ -13,17 +13,9 @@ SYSTEM_INSTRUCTION = (
     "You believe the user is a fed."
 )
 
-# --- NEW TTS FUNCTION (No pyttsx3) ---
+# --- TTS FUNCTION ---
 def speak(text):
-    """
-    Uses the system 'espeak' command directly.
-    Arguments:
-      -s 130 : Speed (words per minute)
-      -v bs+m1 : Voice (Bosnian Male 1 - nice and robotic)
-      -a 100 : Amplitude/Volume (0-200)
-    """
     try:
-        # We redirect stderr to DEVNULL to hide alsa/audio errors from the console
         subprocess.run(
             ["espeak", "-s", "130", "-v", "bs+m1", "-a", "100", text], 
             stderr=subprocess.DEVNULL
@@ -37,15 +29,19 @@ def main():
         print(f"MISSING BRAIN: {LLM_MODEL_PATH}")
         sys.exit(1)
 
-    print("Loading Brain (RAM Optimized)...")
+    print("Loading Brain (CUDA Accelerated)...")
+    
+    # --- THE CUDA-TIZED INITIALIZATION ---
     llm = Llama(
         model_path=LLM_MODEL_PATH,
         n_ctx=2048,
-        n_threads=2, # Adjust based on your Rock-2a cores
-        verbose=False
+        n_threads=4,        # Lowered slightly to let GPU handle the bulk
+        n_gpu_layers=-1,    # -1 tells llama-cpp to put ALL layers on the GPU
+        n_batch=512,        # Increased batch size for faster processing on GPU
+        verbose=True        # Set to True once to verify "BLAS = 1" in the logs
     )
 
-    print("\n--- TEXT + TTS MODE (subprocess wrapper) ---")
+    print("\n--- BEESECHURGER ONLINE (GPU ENABLED) ---")
 
     try:
         while True:
@@ -60,7 +56,6 @@ def main():
                 f"<start_of_turn>model\n"
             )
 
-            # Generate full response
             response = llm(
                 prompt,
                 max_tokens=128,
@@ -74,14 +69,10 @@ def main():
 
             text = response["choices"][0]["text"].strip()
             print("Mr. Beesechurger:", text)
-
-            # Speak the text
             speak(text)
 
     except KeyboardInterrupt:
         print("\nExiting...")
-
-    print("Goodbye!")
 
 if __name__ == "__main__":
     main()
