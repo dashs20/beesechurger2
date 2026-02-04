@@ -11,6 +11,7 @@ from llama_cpp import Llama
 from TTS.api import TTS
 import io
 import scipy.io.wavfile
+import numpy as np
 
 # --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
@@ -69,9 +70,6 @@ def generate_stream(request: UserRequest):
     )
 
     def iter_response():
-        # Using a generator to stream both Text and Audio packets
-        
-        # 1. Ask LLM to generate
         stream = llm(
             prompt,
             max_tokens=256,
@@ -88,40 +86,42 @@ def generate_stream(request: UserRequest):
         
         for chunk in stream:
             text_part = chunk["choices"][0]["text"]
-            
-            # Send text immediately to client for display
             yield json.dumps({"type": "text", "content": text_part}) + "\n"
             
-            # Accumulate for TTS
             sentence_buffer += text_part
 
-            # Check if we have a full sentence (simple check)
             if text_part in [".", "!", "?", "\n"]:
                 if len(sentence_buffer.strip()) > 2:
-                    # Generate Audio for this sentence
-                    # speed=1.3 makes him talk faster
+                    # Generate raw audio (float32)
                     wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.3)
                     
-                    # Convert raw wav data to bytes
-                    # XTTS output is a list of floats, need to convert to 16-bit PCM for PyAudio
-                    # Alternatively, use scipy to write to a bytes buffer
+                    # --- THE FIX: CONVERT TO INT16 ---
+                    # 1. Get numpy array
+                    wav_np = torch.tensor(wav).cpu().numpy()
+                    # 2. Clamp values to be safe
+                    wav_np = np.clip(wav_np, -1, 1)
+                    # 3. Convert float [-1, 1] to int16 [-32767, 32767]
+                    wav_int16 = (wav_np * 32767).astype(np.int16)
+                    
                     out_buf = io.BytesIO()
-                    scipy.io.wavfile.write(out_buf, 24000, torch.tensor(wav).cpu().numpy())
+                    scipy.io.wavfile.write(out_buf, 24000, wav_int16)
                     audio_bytes = out_buf.getvalue()
                     
-                    # Encode to base64 for safe transport over JSON
-                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                    
-                    yield json.dumps({"type": "audio", "data": audio_b64}) + "\n"
+                    yield json.dumps({"type": "audio", "data": base64.b64encode(audio_bytes).decode('utf-8')}) + "\n"
                     
                 sentence_buffer = ""
 
-        # Process any remaining text in buffer
+        # Flush remaining buffer
         if len(sentence_buffer.strip()) > 2:
             wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.3)
+            
+            wav_np = torch.tensor(wav).cpu().numpy()
+            wav_np = np.clip(wav_np, -1, 1)
+            wav_int16 = (wav_np * 32767).astype(np.int16)
+
             out_buf = io.BytesIO()
-            scipy.io.wavfile.write(out_buf, 24000, torch.tensor(wav).cpu().numpy())
-            audio_b64 = base64.b64encode(out_buf.getvalue()).decode('utf-8')
-            yield json.dumps({"type": "audio", "data": audio_b64}) + "\n"
+            scipy.io.wavfile.write(out_buf, 24000, wav_int16)
+            audio_bytes = out_buf.getvalue()
+            yield json.dumps({"type": "audio", "data": base64.b64encode(audio_bytes).decode('utf-8')}) + "\n"
 
     return StreamingResponse(iter_response(), media_type="application/json")
