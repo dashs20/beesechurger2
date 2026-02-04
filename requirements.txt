@@ -6,3 +6,5 @@ uvicorn
 pydantic
 TTS
 pyaudio
+faster-whisper
+python-multipart
