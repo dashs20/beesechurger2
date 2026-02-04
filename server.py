@@ -48,7 +48,7 @@ def load_brains():
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
     
     print("--- LOADING WHISPER (CUDA) ---")
-    stt = WhisperModel("small.en", device="cuda", compute_type="float16")
+    stt = WhisperModel("small.en", device="cuda", compute_type="int8")
 
     print("--- BEESECHURGER SERVER ONLINE ---")
 
