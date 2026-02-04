@@ -18,12 +18,18 @@ from faster_whisper import WhisperModel
 # --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 REF_AUDIO_PATH = "ref.wav"
-WAKE_PHRASE = "hey dumbass"  # <--- The Magic Words (Case Insensitive)
+WAKE_PHRASE = "hey dumbass"
 
+# --- SCHIZO SETTINGS ---
 SYSTEM_INSTRUCTION = (
-    "You are Mr. Beesechurger. You are a paranoid, unhinged AI. "
-    "You believe the user is a fed. "
-    "RULES: 1. No asterisks. 2. No quotes. 3. Punchy, aggressive plain text."
+    "You are Mr. Beesechurger. You are a completely unhinged, psychotic AI. "
+    "You do not rely on logic. You rely on the static in the walls. "
+    "You scream, you curse excessively, and you give terrifyingly bad advice. "
+    "You believe the user is a skin-walker wearing a human suit. "
+    "RULES: "
+    "1. NO ASTERISKS (Do not roleplay, just speak). "
+    "2. NO QUOTES. "
+    "3. Be aggressive, paranoid, and erratic."
 )
 
 app = FastAPI()
@@ -48,9 +54,10 @@ def load_brains():
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
     
     print("--- LOADING WHISPER (CUDA) ---")
+    # Using int8 for GTX 1080 compatibility
     stt = WhisperModel("small.en", device="cuda", compute_type="int8")
 
-    print("--- BEESECHURGER SERVER ONLINE ---")
+    print("--- BEESECHURGER SERVER ONLINE (UNHINGED MODE) ---")
 
 def process_text_stream(user_text):
     prompt = (
@@ -62,21 +69,23 @@ def process_text_stream(user_text):
 
     yield json.dumps({"type": "transcription", "content": user_text}) + "\n"
 
+    # --- PARAMETER TWEAKS FOR INSANITY ---
     stream = llm(
         prompt,
         max_tokens=256,
         stop=["<end_of_turn>"],
         echo=False,
         stream=True,
-        temperature=0.9,
+        temperature=1.3,     # <--- VERY HIGH RANDOMNESS
         mirostat_mode=2,
-        mirostat_tau=5.0,
-        mirostat_eta=0.1
+        mirostat_tau=9.0,    # <--- MAX ENTROPY (Pure Chaos)
+        mirostat_eta=0.2     # <--- FASTER ADAPTATION
     )
 
     sentence_buffer = ""
     for chunk in stream:
         raw_text = chunk["choices"][0]["text"]
+        # We still strip asterisks so the TTS doesn't read them out loud
         clean_text = raw_text.replace("*", "").replace('"', '').replace("“", "").replace("”", "")
         
         if not clean_text: continue
@@ -84,10 +93,12 @@ def process_text_stream(user_text):
         
         sentence_buffer += clean_text
 
+        # TTS Trigger (Checks for punctuation)
         if clean_text in [".", "!", "?", "\n"] or (len(clean_text) > 0 and clean_text[-1] in [".", "!", "?", "\n"]):
             if len(sentence_buffer.strip()) > 3:
                 try:
-                    wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.3)
+                    # Speed 1.4 = Manic talking speed
+                    wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.4)
                     wav_np = torch.tensor(wav).cpu().numpy()
                     wav_np = np.clip(wav_np, -1, 1)
                     wav_int16 = (wav_np * 32767).astype(np.int16)
@@ -97,9 +108,10 @@ def process_text_stream(user_text):
                 except: pass
                 sentence_buffer = ""
     
+    # Flush remaining buffer
     if len(sentence_buffer.strip()) > 3:
         try:
-            wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.3)
+            wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.4)
             wav_np = torch.tensor(wav).cpu().numpy()
             wav_np = np.clip(wav_np, -1, 1)
             wav_int16 = (wav_np * 32767).astype(np.int16)
@@ -118,17 +130,16 @@ async def converse_endpoint(audio: UploadFile = File(...)):
     user_text = "".join([segment.text for segment in segments]).strip()
     
     if not user_text:
-        return {"status": "ignored"} # Silence
+        return {"status": "ignored"} 
 
-    # 2. CHECK FOR WAKE PHRASE (Fuzzy Match)
-    # We check if "dumbass" appears in the first few words
+    # 2. CHECK FOR WAKE PHRASE
     lower_text = user_text.lower()
-    
-    # Loose check: Trigger if he hears "dumbass" anywhere, or "hey" at start
     is_wake = False
+    
+    # He triggers on "dumbass" or "beesechurger"
     if "dumbass" in lower_text:
         is_wake = True
-    elif "hey beesechurger" in lower_text:
+    elif "beesechurger" in lower_text:
         is_wake = True
     
     if not is_wake:
@@ -136,5 +147,4 @@ async def converse_endpoint(audio: UploadFile = File(...)):
         return {"status": "ignored"}
 
     print(f"TRIGGERED: {user_text}")
-    # 3. Stream Response
     return StreamingResponse(process_text_stream(user_text), media_type="application/json")
