@@ -17,7 +17,7 @@ import numpy as np
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 REF_AUDIO_PATH = "ref.wav" # <--- YOU NEED THIS FILE
 SYSTEM_INSTRUCTION = (
-    "You are mike from breaking bad"
+    "You're Deku from My hero academia. But you're plastered and say fuck and shit a lot"
 )
 
 app = FastAPI()
