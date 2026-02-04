@@ -45,50 +45,6 @@ def load_brain():
     )
     print("--- BEESECHURGER SERVER ONLINE ---")
 
-@app.post("/generate")
-def generate_stream(request: UserRequest):
-    if llm is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    prompt = (
-        f"<start_of_turn>user\n"
-        f"{SYSTEM_INSTRUCTION}\n\n"
-        f"USER SAYS: {request.message}<end_of_turn>\n"
-        f"<start_of_turn>model\n"
-    )
-
-    # We define a generator function that yields text pieces
-    def iter_token():
-        stream = llm(
-            prompt,
-            max_tokens=256,
-            stop=["<end_of_turn>"],
-            echo=False,
-            stream=True,  # <--- Enable Streaming in Llama
-            temperature=1.0,
-            mirostat_mode=2,
-            mirostat_tau=8.0,
-            mirostat_eta=0.1
-        )
-        
-        for chunk in stream:
-            # Yield just the text part of the chunk
-            yield chunk["choices"][0]["text"]
-
-    # Return the stream directly to the client
-    return StreamingResponse(iter_token(), media_type="text/plain")
-Restart the server after saving this change.
-
-Part 2: The New Client App (client.py)
-Now, here is the Python script for your client computer (the Rock Pi). It looks and feels exactly like your old terminal app, but it talks to the network.
-
-Update the IP address in the SERVER_URL variable before running.
-
-Python
-#!/usr/bin/env python3
-import sys
-import requests
-
 # --- CONFIG ---
 # REPLACE THIS WITH YOUR UBUNTU SERVER IP
 SERVER_URL = "http://192.168.0.9:8000/generate"
