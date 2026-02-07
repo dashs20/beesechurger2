@@ -80,7 +80,7 @@ def process_text_stream(user_text):
         echo=False,
         stream=True,
         # Temperature 0.85: Creative enough to swear, stable enough to make sense.
-        temperature=0.85,     
+        temperature=1.1,     
         mirostat_mode=2,
         # Tau 4.0: This is the "Coherence Anchor." 
         # It forces him to finish sentences logically instead of rambling into nonsense.
