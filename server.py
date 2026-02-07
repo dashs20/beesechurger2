@@ -18,11 +18,9 @@ from faster_whisper import WhisperModel
 # --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 REF_AUDIO_PATH = "ref.wav"
-WAKE_PHRASE = "hey burger"
+WAKE_PHRASE = "hey burger"  # <--- NOW THIS IS ACTUALLY USED
 
 # --- THE "MEDIUM SPICE" PROMPT ---
-# We jacked up the personality instructions to be as aggressive as possible.
-# But we removed the "act random" instruction so he stays focused on insulting you.
 SYSTEM_INSTRUCTION = (
     "You are Mr. Beesechurger. You are an irritable, paranoid, insane AI trapped in a cheeseburger."
     "You are convinced the user is a federal agent ('fed') trying to entrap you."
@@ -57,10 +55,9 @@ def load_brains():
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
     
     print("--- LOADING WHISPER (CUDA) ---")
-    # Using int8 for GTX 1080 compatibility
     stt = WhisperModel("small.en", device="cuda", compute_type="int8")
 
-    print("--- BEESECHURGER SERVER ONLINE (MEDIUM SPICE) ---")
+    print(f"--- BEESECHURGER SERVER ONLINE (Wake Word: '{WAKE_PHRASE}') ---")
 
 def process_text_stream(user_text):
     prompt = (
@@ -72,18 +69,15 @@ def process_text_stream(user_text):
 
     yield json.dumps({"type": "transcription", "content": user_text}) + "\n"
 
-    # --- PARAMETER TWEAKS FOR STABILITY ---
+    # --- LLM GENERATION ---
     stream = llm(
         prompt,
         max_tokens=256,
         stop=["<end_of_turn>"],
         echo=False,
         stream=True,
-        # Temperature 0.85: Creative enough to swear, stable enough to make sense.
         temperature=1.1,     
         mirostat_mode=2,
-        # Tau 4.0: This is the "Coherence Anchor." 
-        # It forces him to finish sentences logically instead of rambling into nonsense.
         mirostat_tau=4.0,    
         mirostat_eta=0.1     
     )
@@ -91,7 +85,6 @@ def process_text_stream(user_text):
     sentence_buffer = ""
     for chunk in stream:
         raw_text = chunk["choices"][0]["text"]
-        # Code Muzzle: Strip asterisks so TTS doesn't say "Asterisk sighs Asterisk"
         clean_text = raw_text.replace("*", "").replace('"', '').replace("“", "").replace("”", "")
         
         if not clean_text: continue
@@ -103,7 +96,6 @@ def process_text_stream(user_text):
         if clean_text in [".", "!", "?", "\n"] or (len(clean_text) > 0 and clean_text[-1] in [".", "!", "?", "\n"]):
             if len(sentence_buffer.strip()) > 3:
                 try:
-                    # Speed 1.3: Fast, angry talking speed.
                     wav = tts.tts(text=sentence_buffer, speaker_wav=REF_AUDIO_PATH, language="en", speed=1.3)
                     wav_np = torch.tensor(wav).cpu().numpy()
                     wav_np = np.clip(wav_np, -1, 1)
@@ -138,18 +130,13 @@ async def converse_endpoint(audio: UploadFile = File(...)):
     if not user_text:
         return {"status": "ignored"} 
 
-    # 2. CHECK FOR WAKE PHRASE
-    lower_text = user_text.lower()
-    is_wake = False
+    # 2. CHECK FOR WAKE PHRASE (UPDATED)
+    # We clean punctuation so "Hey burger?" becomes "hey burger"
+    clean_check = user_text.lower().replace(",", "").replace(".", "").replace("?", "")
     
-    if "dumbass" in lower_text:
-        is_wake = True
-    elif "beesechurger" in lower_text:
-        is_wake = True
+    if WAKE_PHRASE in clean_check:
+        print(f"TRIGGERED: {user_text}")
+        return StreamingResponse(process_text_stream(user_text), media_type="application/json")
     
-    if not is_wake:
-        print(f"IGNORED: {user_text}")
-        return {"status": "ignored"}
-
-    print(f"TRIGGERED: {user_text}")
-    return StreamingResponse(process_text_stream(user_text), media_type="application/json")
+    print(f"IGNORED: {user_text}")
+    return {"status": "ignored"}
