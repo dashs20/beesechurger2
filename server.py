@@ -18,7 +18,7 @@ from faster_whisper import WhisperModel
 # --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 REF_AUDIO_PATH = "ref.wav"
-WAKE_PHRASE = "hey burger"  # <--- NOW THIS IS ACTUALLY USED
+WAKE_PHRASE = "greaseball"  # <--- NOW THIS IS ACTUALLY USED
 
 # --- THE "MEDIUM SPICE" PROMPT ---
 SYSTEM_INSTRUCTION = (
