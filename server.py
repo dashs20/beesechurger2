@@ -18,7 +18,7 @@ from faster_whisper import WhisperModel
 # --- CONFIG ---
 LLM_MODEL_PATH = "gemma-2-2b-it-abliterated-Q4_K_M.gguf"
 REF_AUDIO_PATH = "ref.wav"
-WAKE_PHRASE = "greaseball"  # <--- NOW THIS IS ACTUALLY USED
+# WAKE_PHRASE REMOVED
 
 # --- THE "MEDIUM SPICE" PROMPT ---
 SYSTEM_INSTRUCTION = (
@@ -57,9 +57,10 @@ def load_brains():
     print("--- LOADING WHISPER (CUDA) ---")
     stt = WhisperModel("small.en", device="cuda", compute_type="int8")
 
-    print(f"--- BEESECHURGER SERVER ONLINE (Wake Word: '{WAKE_PHRASE}') ---")
+    print(f"--- BEESECHURGER SERVER ONLINE (Wake Word: DISABLED - ALWAYS LISTENING) ---")
 
 def process_text_stream(user_text):
+    # Pass the text to the generator
     prompt = (
         f"<start_of_turn>user\n"
         f"{SYSTEM_INSTRUCTION}\n\n"
@@ -127,16 +128,11 @@ async def converse_endpoint(audio: UploadFile = File(...)):
     segments, info = stt.transcribe("temp_input.wav", beam_size=5)
     user_text = "".join([segment.text for segment in segments]).strip()
     
+    # If no text was detected, ignore
     if not user_text:
         return {"status": "ignored"} 
 
-    # 2. CHECK FOR WAKE PHRASE (UPDATED)
-    # We clean punctuation so "Hey burger?" becomes "hey burger"
-    clean_check = user_text.lower().replace(",", "").replace(".", "").replace("?", "")
-    
-    if WAKE_PHRASE in clean_check:
-        print(f"TRIGGERED: {user_text}")
-        return StreamingResponse(process_text_stream(user_text), media_type="application/json")
-    
-    print(f"IGNORED: {user_text}")
-    return {"status": "ignored"}
+    # 2. NO WAKE WORD CHECK
+    # Immediately process whatever was said
+    print(f"PROCESSING: {user_text}")
+    return StreamingResponse(process_text_stream(user_text), media_type="application/json")
